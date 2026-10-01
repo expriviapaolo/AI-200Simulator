@@ -1,0 +1,5 @@
+*.bak
+*Copia*
+_tmp/
+_to_delete/
+Thumbs.db

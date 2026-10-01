@@ -1,0 +1,2048 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>AI-200 Exam Simulator (Web)</title>
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f1420">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AI-200">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #1a2133;
+    --panel2: #222b42;
+    --border: #2e3a56;
+    --text: #eef1f8;
+    --muted: #9aa5bf;
+    --accent: #4f8cff;
+    --accent2: #7aa8ff;
+    --green: #35c26a;
+    --green-bg: #123321;
+    --red: #ff5b6e;
+    --red-bg: #3a1420;
+    --amber: #f2b544;
+  }
+  * { box-sizing: border-box; }
+  html {
+    /* Scala globale dei caratteri, regolata dai pulsanti A-/A+ (persistita in localStorage).
+       Tutte le dimensioni della pagina sono in rem, quindi seguono questa scala. */
+    font-size: calc(16px * var(--font-scale, 1));
+  }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  #app {
+    max-width: 720px;
+    margin: 0 auto;
+    min-height: 100vh;
+    padding: 16px 16px 40px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: space-between;
+    padding: 10px 0 0;
+  }
+  .lang-toggle, .font-toggle {
+    display: flex;
+    gap: 6px;
+  }
+  .lang-btn, .font-btn {
+    border: 1px solid var(--border);
+    background: var(--panel2);
+    color: var(--muted);
+    border-radius: 20px;
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .font-btn {
+    padding: 6px 11px;
+    font-size: 0.85rem;
+    border-radius: 8px;
+  }
+  .lang-btn.active {
+    border-color: var(--accent);
+    background: rgba(79,140,255,0.16);
+    color: var(--accent2);
+  }
+
+  /* Enfasi bilingue: la lingua "principale" (scelta col toggle in alto) è più grande,
+     più leggibile e a piena opacità; l'altra resta visibile ma più piccola e attenuata.
+     Si applica ovunque compaiano coppie EN/IT (quiz, rivedi risposte, domande in ripasso).
+     Il default (nessuna scelta salvata ancora) è "inglese principale", il look storico
+     di questa pagina: vedi le regole base di .q-text-en/.q-text-it/.opt-en/.opt-it sopra. */
+  #app.lang-primary-en .q-text-en, #app.lang-primary-en .opt-en { font-weight: 600; }
+
+  #app.lang-primary-it .q-text-en {
+    font-size: 0.82rem;
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+  #app.lang-primary-it .q-text-it {
+    font-size: 1.12rem;
+    font-weight: 600;
+    line-height: 1.5;
+    color: var(--text);
+  }
+  #app.lang-primary-it .opt-en {
+    font-size: 0.8rem;
+    font-weight: 400;
+    color: var(--muted);
+  }
+  #app.lang-primary-it .opt-it {
+    font-size: 0.98rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  /* Banner "sei offline" e "nuova versione disponibile": persistenti sopra la toolbar, visibili
+     su qualunque schermata, non invasivi (una riga, nessun blocco dell'interfaccia). */
+  .status-banner {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-top: 10px;
+  }
+  .status-banner.show { display: flex; }
+  .status-banner.offline {
+    background: var(--panel2);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .status-banner.update {
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(53,194,106,0.35);
+    justify-content: space-between;
+  }
+  .status-banner.update button {
+    border: 1px solid var(--green);
+    background: transparent;
+    color: var(--green);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .screen { display: none; flex: 1; flex-direction: column; }
+  .screen.active { display: flex; }
+
+  header.top {
+    text-align: center;
+    padding: 24px 8px 8px;
+  }
+  header.top h1 {
+    font-size: 1.4rem;
+    margin: 0 0 4px;
+    letter-spacing: 0.3px;
+  }
+  header.top p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+
+  h2.section-title {
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+
+  .mode-toggle {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .mode-btn {
+    flex: 1;
+    padding: 14px 8px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--panel2);
+    color: var(--text);
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-align: center;
+    cursor: pointer;
+  }
+  .mode-btn small {
+    display: block;
+    font-weight: 400;
+    color: var(--muted);
+    font-size: 0.75rem;
+    margin-top: 3px;
+  }
+  .mode-btn.selected {
+    border-color: var(--accent);
+    background: rgba(79,140,255,0.16);
+  }
+
+  .count-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .count-btn {
+    padding: 14px 4px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--panel2);
+    color: var(--text);
+    font-size: 1rem;
+    font-weight: 700;
+    text-align: center;
+    cursor: pointer;
+  }
+  .count-btn.selected {
+    border-color: var(--accent);
+    background: rgba(79,140,255,0.16);
+    color: var(--accent2);
+  }
+  .coverage-progress {
+    margin: 10px 0 0;
+    font-size: 0.8rem;
+    color: var(--muted, #8a93a6);
+    text-align: center;
+  }
+
+  .btn-primary {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    border-radius: 12px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 1.05rem;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 6px;
+  }
+  .btn-primary:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .btn-secondary {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 10px;
+  }
+  .btn-ghost {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 0.85rem;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 8px;
+  }
+
+  .quiz-top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .progress-track {
+    height: 6px;
+    background: var(--panel2);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 18px;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.2s ease;
+  }
+
+  .badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 3px 9px;
+    border-radius: 20px;
+    background: rgba(79,140,255,0.18);
+    color: var(--accent2);
+    margin-bottom: 10px;
+  }
+  .badge.badge-category {
+    background: var(--panel2);
+    color: var(--muted);
+    letter-spacing: 0.02em;
+    margin-left: 6px;
+  }
+
+  .q-text-en {
+    font-size: 1.12rem;
+    line-height: 1.5;
+    margin: 0 0 10px;
+  }
+  .q-text-it {
+    font-size: 0.96rem;
+    line-height: 1.45;
+    margin: 0;
+    color: var(--muted);
+    border-top: 1px dashed var(--border);
+    padding-top: 10px;
+  }
+  .q-image {
+    max-width: 100%;
+    border-radius: 10px;
+    margin: 4px 0 14px;
+    border: 1px solid var(--border);
+  }
+
+  .answers { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .answer-opt {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 13px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--panel2);
+    cursor: pointer;
+  }
+  .answer-opt .marker {
+    flex: 0 0 20px;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    border: 2px solid var(--muted);
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+  }
+  .answer-opt.multi .marker { border-radius: 5px; }
+  .answer-opt .opt-text { flex: 1; }
+  .answer-opt .opt-en { font-size: 0.98rem; line-height: 1.4; }
+  .answer-opt .opt-it { font-size: 0.85rem; color: var(--muted); margin-top: 3px; line-height: 1.35; }
+
+  .answer-opt.picked { border-color: var(--accent); background: rgba(79,140,255,0.14); }
+  .answer-opt.picked .marker { border-color: var(--accent); background: var(--accent); color: #fff; }
+
+  .answer-opt.locked { cursor: default; }
+  .answer-opt.correct-reveal { border-color: var(--green); background: var(--green-bg); }
+  .answer-opt.correct-reveal .marker { border-color: var(--green); background: var(--green); color: #06210f; }
+  .answer-opt.wrong-reveal { border-color: var(--red); background: var(--red-bg); }
+  .answer-opt.wrong-reveal .marker { border-color: var(--red); background: var(--red); color: #2a0007; }
+
+  .explain-box {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: var(--panel2);
+    border-left: 3px solid var(--amber);
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+  .explain-box .lbl {
+    font-weight: 700;
+    color: var(--amber);
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .explain-box a { color: var(--accent2); }
+
+  .quiz-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .quiz-actions .btn-primary { margin-top: 0; }
+  .quiz-actions .btn-end {
+    flex: 0 0 auto;
+    padding: 16px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--red);
+    background: transparent;
+    color: var(--red);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+
+  /* Results screen */
+  .score-circle {
+    width: 160px; height: 160px;
+    border-radius: 50%;
+    margin: 10px auto 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: 6px solid var(--green);
+  }
+  .score-circle.fail { border-color: var(--red); }
+  .score-circle .val { font-size: 2rem; font-weight: 800; }
+  .score-circle .max { font-size: 0.85rem; color: var(--muted); }
+  .result-verdict {
+    text-align: center;
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .result-verdict.pass { color: var(--green); }
+  .result-verdict.fail { color: var(--red); }
+  .result-sub {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-bottom: 18px;
+  }
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.92rem;
+  }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-row .v { font-weight: 700; }
+
+  /* Review screen */
+  .review-item {
+    border-bottom: 1px solid var(--border);
+    padding: 16px 0;
+  }
+  .review-item:last-child { border-bottom: none; }
+  .review-num {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .review-verdict {
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    display: inline-block;
+    margin-left: 6px;
+  }
+  .review-verdict.ok { color: var(--green); background: var(--green-bg); }
+  .review-verdict.bad { color: var(--red); background: var(--red-bg); }
+
+  footer.foot {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.75rem;
+    padding: 18px 8px 4px;
+  }
+
+  @media (min-width: 600px) {
+    .answer-opt .opt-en { font-size: 1.02rem; }
+  }
+
+  .result-warning {
+    border-color: var(--amber);
+    background: rgba(242,181,68,0.12);
+    color: var(--amber);
+    font-size: 0.9rem;
+    line-height: 1.45;
+    text-align: center;
+  }
+  .btn-secondary:disabled { opacity: 0.4; cursor: default; }
+
+  .history-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .hstat {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px;
+    text-align: center;
+  }
+  .hstat-val { font-size: 1.3rem; font-weight: 800; }
+  .hstat-val.ok { color: var(--green); }
+  .hstat-lbl { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+
+  .empty-hint {
+    color: var(--muted);
+    text-align: center;
+    padding: 24px 8px;
+    font-size: 0.9rem;
+  }
+
+  /* Card "Consiglio di studio" (contenuto definito in exam-config.js, vedi renderStudyTip()). */
+  .study-tip-intro {
+    margin: 0 0 8px;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .study-tip-list {
+    margin: 0 0 12px;
+    padding-left: 1.2em;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .study-tip-list li {
+    font-size: 0.92rem;
+    line-height: 1.4;
+  }
+  .study-tip-list .study-tip-term {
+    font-weight: 700;
+    color: var(--accent2);
+  }
+  .study-tip-conclusion {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+
+  /* Card "Link utili" (contenuto definito in exam-config.js, SETTINGS.usefulLinks, vedi renderUsefulLinks()). */
+  .useful-links-list { display: flex; flex-direction: column; gap: 10px; }
+  .useful-link {
+    display: block;
+    padding: 10px 12px;
+    border: 1px solid var(--border, rgba(255,255,255,0.12));
+    border-radius: 10px;
+    text-decoration: none;
+    color: inherit;
+  }
+  .useful-link:hover, .useful-link:focus-visible { border-color: var(--accent2); }
+  .useful-link-title { display: block; font-weight: 700; color: var(--accent2); margin-bottom: 2px; }
+  .useful-link-desc { display: block; font-size: 0.88rem; line-height: 1.4; color: var(--muted); }
+
+  /* Statistiche per area: una riga per categoria, ordinate dalla più debole (in cima) alla
+     più forte, con una barra di sfondo proporzionale alla percentuale di risposte corrette. */
+  .cat-stat-row {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--panel2);
+    margin-bottom: 8px;
+    overflow: hidden;
+    font-size: 0.85rem;
+  }
+  .cat-stat-row:last-child { margin-bottom: 0; }
+  .cat-stat-bar {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    background: rgba(79,140,255,0.16);
+    z-index: 0;
+  }
+  .cat-stat-row.weak .cat-stat-bar { background: rgba(255,91,110,0.18); }
+  .cat-stat-row.strong .cat-stat-bar { background: rgba(53,194,106,0.18); }
+  .cat-stat-name, .cat-stat-val { position: relative; z-index: 1; }
+  .cat-stat-name { font-weight: 600; }
+  .cat-stat-val { font-weight: 700; white-space: nowrap; margin-left: 10px; }
+  .cat-stat-val small { font-weight: 400; color: var(--muted); }
+
+  /* Storico risultati: tabella vera, con scroll orizzontale sui viewport stretti invece di
+     spezzare il layout (le colonne restano leggibili anche su telefono). */
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--panel);
+  }
+  .history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+  .history-table th, .history-table td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .history-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--panel2);
+    color: var(--muted);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+  }
+  .history-table tbody tr:last-child td { border-bottom: none; }
+  .history-table tbody tr:hover { background: rgba(79,140,255,0.06); }
+  .history-table td.num { font-weight: 700; }
+  .hr-esito {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 20px;
+  }
+  .hr-esito.ok { color: var(--green); background: var(--green-bg); }
+  .hr-esito.bad { color: var(--red); background: var(--red-bg); }
+
+  .rq-progress { font-size: 0.85rem; color: var(--accent2); font-weight: 600; margin-top: 8px; }
+  .rq-meta { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="toolbar">
+    <div class="lang-toggle" role="group" aria-label="Lingua principale">
+      <button type="button" class="lang-btn" id="lang-btn-it" onclick="setPrimaryLang('it')">🇮🇹 Italiano</button>
+      <button type="button" class="lang-btn" id="lang-btn-en" onclick="setPrimaryLang('en')">🇬🇧 English</button>
+    </div>
+    <div class="font-toggle" role="group" aria-label="Dimensione testo">
+      <button type="button" class="font-btn" onclick="decreaseFontScale()" title="Rimpicciolisci testo" aria-label="Rimpicciolisci testo">A−</button>
+      <button type="button" class="font-btn" onclick="increaseFontScale()" title="Ingrandisci testo" aria-label="Ingrandisci testo">A+</button>
+    </div>
+  </div>
+
+  <div class="status-banner offline" id="offline-banner">📡 Sei offline — i dati già caricati funzionano comunque.</div>
+  <div class="status-banner update" id="update-banner">
+    <span>🔄 È disponibile una nuova versione delle domande.</span>
+    <button type="button" onclick="applyPendingUpdate()">Aggiorna ora</button>
+  </div>
+
+  <!-- HOME -->
+  <div class="screen active" id="screen-home">
+    <header class="top">
+      <h1 id="app-title">AI-200 Exam Simulator</h1>
+      <p id="app-subtitle">Developing AI Cloud Solutions on Azure &middot; versione web</p>
+    </header>
+
+    <!-- Nascosta finche' non c'e' almeno un test completato (vedi refreshStreakUI()), per non
+         ingombrare la Home al primo utilizzo. -->
+    <div class="card" id="streak-card" style="display:none;">
+      <h2 class="section-title">Il tuo percorso</h2>
+      <div class="history-stats">
+        <div class="hstat"><div class="hstat-val" id="streak-current">0</div><div class="hstat-lbl">🔥 Giorni di fila</div></div>
+        <div class="hstat"><div class="hstat-val" id="streak-best">0</div><div class="hstat-lbl">🏆 Record giorni di fila</div></div>
+        <div class="hstat"><div class="hstat-val" id="streak-tests">0</div><div class="hstat-lbl">✅ Test completati</div></div>
+        <div class="hstat"><div class="hstat-val" id="streak-reviewed">0</div><div class="hstat-lbl">🎯 Domande superate in ripasso</div></div>
+      </div>
+    </div>
+
+    <!-- Card facoltativa con un consiglio di studio, definito in exam-config.js (SETTINGS.studyTip).
+         Nascosta automaticamente se studyTip non è presente/valido (vedi renderStudyTip()). -->
+    <div class="card" id="study-tip-card" style="display:none;">
+      <h2 class="section-title" id="study-tip-title">Consiglio di studio</h2>
+      <p class="study-tip-intro" id="study-tip-intro"></p>
+      <ul class="study-tip-list" id="study-tip-list"></ul>
+      <p class="study-tip-conclusion" id="study-tip-conclusion"></p>
+    </div>
+
+    <!-- Card facoltativa "Link utili": elenco definito in exam-config.js (SETTINGS.usefulLinks),
+         ogni link si apre in una nuova scheda. Nascosta se l'elenco e' vuoto/assente. -->
+    <div class="card" id="useful-links-card" style="display:none;">
+      <h2 class="section-title" id="useful-links-title">Link utili</h2>
+      <div class="useful-links-list" id="useful-links-list"></div>
+    </div>
+
+    <div class="card">
+      <h2 class="section-title">Modalità</h2>
+      <div class="mode-toggle">
+        <div class="mode-btn selected" data-mode="allenamento" onclick="selectMode('allenamento')">
+          Allenamento
+          <small>risposta e spiegazione subito</small>
+        </div>
+        <div class="mode-btn" data-mode="simulazione" onclick="selectMode('simulazione')">
+          Simulazione
+          <small>risultato solo a fine test</small>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="section-title">Numero di domande</h2>
+      <div class="count-grid" id="count-grid"></div>
+      <button class="btn-secondary" id="btn-solo-ripasso" onclick="startReviewOnlyQuiz()" title="Avvia subito un test con tutte le domande attualmente in ripasso, nella modalità selezionata sopra.">Solo ripasso</button>
+      <p class="coverage-progress" id="coverage-progress" title="Ogni nuovo test pesca prima tra le domande non ancora proposte in questo ciclo, così tutto il dataset viene coperto prima di ricominciare da capo."></p>
+    </div>
+
+    <button class="btn-primary" id="btn-start" onclick="startQuiz()">Inizia test</button>
+    <button class="btn-secondary" onclick="showHistory()">Storico risultati</button>
+    <button class="btn-secondary" id="btn-show-reviewqueue" onclick="showReviewQueue()">Domande in ripasso</button>
+
+    <button class="btn-ghost" id="btn-install-app" onclick="installApp()" style="display:none;">📲 Installa come app</button>
+    <button class="btn-ghost" onclick="downloadOfflineCopy()">⬇️ Scarica questa pagina (per uso offline)</button>
+
+    <footer class="foot" id="app-footer">0 domande disponibili</footer>
+  </div>
+
+  <!-- QUIZ -->
+  <div class="screen" id="screen-quiz">
+    <div class="quiz-top-bar">
+      <span id="quiz-progress-label">Domanda 1 di 10</span>
+      <span id="quiz-mode-label">Allenamento</span>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+
+    <div class="card">
+      <span class="badge" id="q-type-badge">SCELTA SINGOLA</span>
+      <span class="badge badge-category" id="q-category-badge"></span>
+      <img id="q-image" class="q-image" style="display:none" />
+      <p class="q-text-en" id="q-text-en"></p>
+      <p class="q-text-it" id="q-text-it"></p>
+
+      <div class="answers" id="answers-container"></div>
+
+      <div id="explain-container"></div>
+    </div>
+
+    <div class="quiz-actions">
+      <button class="btn-secondary" id="btn-confirm" style="display:none" onclick="confirmMulti()">Conferma risposta</button>
+      <button class="btn-primary" id="btn-next" disabled onclick="nextQuestion()">Avanti</button>
+      <button class="btn-end" onclick="endQuizEarly()">Termina</button>
+    </div>
+  </div>
+
+  <!-- RESULT -->
+  <div class="screen" id="screen-result">
+    <header class="top">
+      <h1>Risultato</h1>
+    </header>
+    <div class="card result-warning" id="result-warning" style="display:none;">
+      ⚠️ Test incompleto: non hai risposto a tutte le domande, quindi questo risultato non è stato salvato nello storico.
+    </div>
+    <div class="card">
+      <div class="score-circle" id="score-circle">
+        <div class="val" id="score-val">0</div>
+        <div class="max" id="score-max">/ 1000</div>
+      </div>
+      <div class="result-verdict" id="result-verdict">Superato</div>
+      <div class="result-sub" id="result-sub">Soglia di superamento: 700 / 1000</div>
+
+      <div class="stat-row"><span>Risposte corrette</span><span class="v" id="stat-correct">0 / 0</span></div>
+      <div class="stat-row"><span>Risposte sbagliate</span><span class="v" id="stat-wrong">0</span></div>
+      <div class="stat-row"><span>Senza risposta</span><span class="v" id="stat-unanswered">0</span></div>
+      <div class="stat-row"><span>Modalità</span><span class="v" id="stat-mode">Allenamento</span></div>
+      <div class="stat-row"><span>Durata</span><span class="v" id="stat-duration">-</span></div>
+      <div class="stat-row"><span>Media/risposta</span><span class="v" id="stat-avg">-</span></div>
+    </div>
+
+    <button class="btn-primary" onclick="showReview()">Rivedi risposte</button>
+    <button class="btn-secondary" onclick="goHome()">Nuovo test</button>
+    <button class="btn-ghost" onclick="showHistory()">Vai allo storico risultati</button>
+  </div>
+
+  <!-- REVIEW -->
+  <div class="screen" id="screen-review">
+    <header class="top">
+      <h1>Rivedi risposte</h1>
+    </header>
+    <div class="card" id="review-list"></div>
+    <button class="btn-secondary" onclick="goHome()">Torna alla home</button>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="screen" id="screen-history">
+    <header class="top">
+      <h1>Storico risultati</h1>
+    </header>
+
+    <div class="history-stats" id="history-stats">
+      <div class="hstat"><div class="hstat-val" id="hist-count">0</div><div class="hstat-lbl">Test effettuati</div></div>
+      <div class="hstat"><div class="hstat-val ok" id="hist-best">0</div><div class="hstat-lbl">Miglior punteggio</div></div>
+      <div class="hstat"><div class="hstat-val" id="hist-avg">0</div><div class="hstat-lbl">Punteggio medio</div></div>
+      <div class="hstat"><div class="hstat-val" id="hist-passrate">0%</div><div class="hstat-lbl">Test superati</div></div>
+    </div>
+
+    <p class="empty-hint" id="history-empty">Nessun test svolto finora.</p>
+    <div class="table-scroll" id="history-list" style="display:none;"></div>
+
+    <!-- Statistiche per area: calcolate su TUTTE le risposte date finora (non solo l'ultimo
+         test), per capire dove concentrare lo studio. Vedi ai200_category_stats_v1. -->
+    <div class="card" id="category-stats-card" style="display:none;">
+      <h2 class="section-title">Statistiche per area</h2>
+      <div id="category-stats-list"></div>
+    </div>
+
+    <button class="btn-secondary" onclick="goHome()">Torna alla home</button>
+  </div>
+
+  <!-- REVIEW QUEUE -->
+  <div class="screen" id="screen-reviewqueue">
+    <header class="top">
+      <h1>Domande in ripasso</h1>
+      <p><span id="reviewqueue-count">0</span> domande attualmente in ripasso &middot; servono <span id="review-required-n">3</span> risposte corrette consecutive per uscire</p>
+    </header>
+
+    <p class="empty-hint" id="reviewqueue-empty">Nessuna domanda in ripasso al momento.</p>
+    <div class="card" id="reviewqueue-list" style="display:none;"></div>
+
+    <button class="btn-secondary" onclick="goHome()">Torna alla home</button>
+  </div>
+
+</div>
+
+<script src="exam-config.js"></script>
+<script src="exam-questions.js"></script>
+<script>
+
+// Copia "pristina" dell'intera pagina, catturata qui (primissima istruzione eseguita, prima di
+// qualunque modifica al DOM da parte del resto dello script) per il pulsante "Scarica questa
+// pagina": permette di riscaricare in qualunque momento una copia identica e funzionante del
+// file, utile per avere una copia locale sul telefono e lavorare offline anche senza OneDrive.
+const PRISTINE_DOCTYPE_HTML = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+
+// La pagina carica domande/configurazione da 2 file esterni (exam-config.js, exam-questions.js)
+// cosi' e' facile adattarla ad un'altra certificazione senza toccare questo file. Il pulsante di
+// download pero' deve restare autosufficiente: qui i due <script src> vengono sostituiti con i
+// dati stessi (gia' in memoria, ricodificati in JSON), cosi' il file scaricato riapre e funziona
+// da solo anche se separato dal resto della cartella.
+function downloadOfflineCopy() {
+  try {
+    // Nota: la sequenza "<" seguita direttamente da "/script>" non deve MAI comparire
+    // per intero nel sorgente di questo script (nemmeno dentro una stringa), perche' il
+    // parser HTML la riconosce e chiude il tag script a meta' pagina, a prescindere dal
+    // contesto JS. Per questo il tag di chiusura viene sempre ricomposto con una
+    // concatenazione invece di essere scritto per esteso.
+    const scriptClose = '<' + '/script>';
+    const stripCacheKey = (key, val) => (key === '__rk' ? undefined : val);
+    const inlineScript =
+      '<script>\n' +
+      'const SETTINGS = ' + JSON.stringify(SETTINGS) + ';\n' +
+      'const QUESTIONS = ' + JSON.stringify(QUESTIONS, stripCacheKey) + ';\n' +
+      'const IMAGES = ' + JSON.stringify(IMAGES) + ';\n' +
+      scriptClose;
+
+    const oldDataScripts =
+      '<script src="exam-config.js">' + scriptClose + '\n' +
+      '<script src="exam-questions.js">' + scriptClose;
+
+    let html = PRISTINE_DOCTYPE_HTML.replace(oldDataScripts, inlineScript);
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'AI200-Quiz-Web.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) {
+    alert('Impossibile scaricare automaticamente su questo browser. Usa il menu del browser (⋮) → "Scarica pagina" / "Salva come".');
+  }
+}
+
+// Registrazione del service worker (solo se la pagina e' servita via http/https, es. GitHub
+// Pages: da file locale il browser non lo permette, ma li' l'offline funziona comunque perche'
+// il file e' gia' interamente sul dispositivo).
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      // Se la pagina non ha ancora un controller attivo, questa è la primissima visita/
+      // installazione: non c'è nessun "aggiornamento" da segnalare. Il banner "nuova versione
+      // disponibile" ha senso solo per le visite successive, quando sw.js viene ripubblicato
+      // (es. dopo aver aggiornato exam-questions.js) e il browser rileva byte diversi.
+      if (!navigator.serviceWorker.controller) return;
+
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          // sw.js corrente chiama gia' self.skipWaiting()/clients.claim() in automatico, quindi
+          // il nuovo worker si attiva da solo (non serve gestire l'handshake skipWaiting qui):
+          // basta segnalare all'utente che i dati/pagina già in memoria sono superati e un
+          // ricaricamento li aggiorna a quelli appena messi in cache dal nuovo worker.
+          if (newWorker.state === 'activated') showUpdateBanner();
+        });
+      });
+    }).catch(() => { /* nessun problema: la pagina funziona comunque senza cache offline aggiuntiva */ });
+  });
+}
+
+function showUpdateBanner() {
+  const banner = document.getElementById('update-banner');
+  if (banner) banner.classList.add('show');
+}
+
+function applyPendingUpdate() {
+  location.reload();
+}
+
+// ===================== Banner "sei offline" =====================
+// Solo un avviso informativo: non blocca nulla, dato che (fuori da qualche fetch di rete non
+// presente in questa pagina) tutto continua a funzionare anche offline sia da file locale sia,
+// una volta messo in cache dal service worker, da versione online.
+function updateOfflineBanner() {
+  const banner = document.getElementById('offline-banner');
+  if (banner) banner.classList.toggle('show', !navigator.onLine);
+}
+window.addEventListener('online', updateOfflineBanner);
+window.addEventListener('offline', updateOfflineBanner);
+
+// Prompt nativo di installazione (solo Android/Chrome; su iOS Safari non esiste questa API,
+// l'utente installa comunque manualmente da "Condividi" -> "Aggiungi alla schermata Home").
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const btn = document.getElementById('btn-install-app');
+  if (btn) btn.style.display = 'block';
+});
+
+function installApp() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  deferredInstallPrompt.userChoice.finally(() => {
+    deferredInstallPrompt = null;
+    const btn = document.getElementById('btn-install-app');
+    if (btn) btn.style.display = 'none';
+  });
+}
+
+// ===================== Branding dinamico (da exam-config.js) =====================
+// Titolo, intestazione e piè di pagina non sono più scritti a mano in questo file: vengono
+// impostati qui da SETTINGS, cosi' adattare la pagina ad un'altra certificazione richiede di
+// modificare solo exam-config.js/exam-questions.js, non questo HTML. Nota: l'icona e il nome
+// dell'app installata (manifest.webmanifest) restano invece fissi in quel file separato, perché
+// vengono letti dal sistema operativo prima che questo script venga eseguito.
+function applyBranding() {
+  document.title = SETTINGS.certificationName + ' (Web)';
+  const titleEl = document.getElementById('app-title');
+  if (titleEl) titleEl.textContent = SETTINGS.certificationName;
+  const subtitleEl = document.getElementById('app-subtitle');
+  if (subtitleEl) subtitleEl.textContent = SETTINGS.certificationSubtitle;
+  const footerEl = document.getElementById('app-footer');
+  if (footerEl) {
+    footerEl.textContent = QUESTIONS.length + ' domande disponibili' + (SETTINGS.datasetNote ? ' · ' + SETTINGS.datasetNote : '');
+  }
+}
+
+// ===================== Card "Consiglio di studio" (da exam-config.js) =====================
+// Contenuto interamente definito in SETTINGS.studyTip (titolo, intro, elenco termine->significato,
+// conclusione): questo script si limita a leggerlo e disegnarlo. Se SETTINGS.studyTip non è
+// presente/valido, la card resta nascosta (utile per un'altra certificazione senza questo consiglio).
+function renderStudyTip() {
+  const card = document.getElementById('study-tip-card');
+  if (!card) return;
+
+  const tip = SETTINGS.studyTip;
+  const items = tip && Array.isArray(tip.items) ? tip.items : [];
+  if (!tip || items.length === 0) {
+    card.style.display = 'none';
+    return;
+  }
+
+  const titleEl = document.getElementById('study-tip-title');
+  if (titleEl) titleEl.textContent = tip.title || 'Consiglio di studio';
+
+  const introEl = document.getElementById('study-tip-intro');
+  if (introEl) introEl.textContent = tip.intro || '';
+
+  const listEl = document.getElementById('study-tip-list');
+  if (listEl) {
+    listEl.innerHTML = '';
+    items.forEach((item) => {
+      const li = document.createElement('li');
+      const term = document.createElement('span');
+      term.className = 'study-tip-term';
+      term.textContent = item.term || '';
+      li.appendChild(term);
+      li.appendChild(document.createTextNode(' → ' + (item.meaning || '')));
+      listEl.appendChild(li);
+    });
+  }
+
+  const conclusionEl = document.getElementById('study-tip-conclusion');
+  if (conclusionEl) conclusionEl.textContent = tip.conclusion || '';
+
+  card.style.display = 'block';
+}
+
+// Prefisso di provenienza: se la domanda ha il campo "fonte" (es. "IA"), il testo mostrato inizia con "(IA) ".
+function fonteText(q, text) {
+  return q && q.fonte ? '(' + q.fonte + ') ' + text : text;
+}
+
+// ===================== Card "Link utili" (da exam-config.js) =====================
+function renderUsefulLinks() {
+  const card = document.getElementById('useful-links-card');
+  if (!card) return;
+  const links = Array.isArray(SETTINGS.usefulLinks)
+    ? SETTINGS.usefulLinks.filter((l) => l && /^https?:\/\//i.test(l.url || ''))
+    : [];
+  if (links.length === 0) { card.style.display = 'none'; return; }
+  const titleEl = document.getElementById('useful-links-title');
+  if (titleEl) titleEl.textContent = SETTINGS.usefulLinksTitle || 'Link utili';
+  const listEl = document.getElementById('useful-links-list');
+  listEl.innerHTML = '';
+  links.forEach((l) => {
+    const a = document.createElement('a');
+    a.className = 'useful-link';
+    a.href = l.url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    const t = document.createElement('span');
+    t.className = 'useful-link-title';
+    t.textContent = (l.title || l.url) + ' \u2197';
+    a.appendChild(t);
+    if (l.description) {
+      const d = document.createElement('span');
+      d.className = 'useful-link-desc';
+      d.textContent = l.description;
+      a.appendChild(d);
+    }
+    listEl.appendChild(a);
+  });
+  card.style.display = 'block';
+}
+
+// ===================== Lingua principale (localStorage) =====================
+const LS_LANG_KEY = 'ai200_primary_lang';
+
+function loadPrimaryLang() {
+  try {
+    const v = localStorage.getItem(LS_LANG_KEY);
+    return (v === 'it' || v === 'en') ? v : 'en'; // default: inglese (look storico della pagina)
+  } catch (e) { return 'en'; }
+}
+
+function setPrimaryLang(lang) {
+  try { localStorage.setItem(LS_LANG_KEY, lang); } catch (e) { /* localStorage non disponibile: la scelta vale solo per questa sessione */ }
+  applyPrimaryLang(lang);
+}
+
+function applyPrimaryLang(lang) {
+  const app = document.getElementById('app');
+  app.classList.toggle('lang-primary-it', lang === 'it');
+  app.classList.toggle('lang-primary-en', lang !== 'it');
+  const btnIt = document.getElementById('lang-btn-it');
+  const btnEn = document.getElementById('lang-btn-en');
+  if (btnIt) btnIt.classList.toggle('active', lang === 'it');
+  if (btnEn) btnEn.classList.toggle('active', lang !== 'it');
+}
+
+// ===================== Dimensione dei caratteri (localStorage) =====================
+const LS_FONTSCALE_KEY = 'ai200_font_scale';
+const FONT_SCALE_STEPS = [0.85, 1, 1.15, 1.3, 1.45];
+
+function loadFontScale() {
+  try {
+    const v = parseFloat(localStorage.getItem(LS_FONTSCALE_KEY));
+    return FONT_SCALE_STEPS.includes(v) ? v : 1;
+  } catch (e) { return 1; }
+}
+
+function applyFontScale(scale) {
+  document.documentElement.style.setProperty('--font-scale', scale);
+}
+
+function saveFontScale(scale) {
+  try { localStorage.setItem(LS_FONTSCALE_KEY, String(scale)); } catch (e) { /* non disponibile: vale solo per questa sessione */ }
+}
+
+function changeFontScale(direction) {
+  const current = parseFloat(document.documentElement.style.getPropertyValue('--font-scale')) || 1;
+  let idx = FONT_SCALE_STEPS.indexOf(current);
+  if (idx === -1) idx = FONT_SCALE_STEPS.indexOf(1);
+  idx = Math.max(0, Math.min(FONT_SCALE_STEPS.length - 1, idx + direction));
+  const next = FONT_SCALE_STEPS[idx];
+  applyFontScale(next);
+  saveFontScale(next);
+}
+
+function increaseFontScale() { changeFontScale(1); }
+function decreaseFontScale() { changeFontScale(-1); }
+
+let state = {
+  mode: 'allenamento',
+  count: SETTINGS.availableQuestionCounts[0],
+  pool: [],
+  current: 0,
+  answers: [],      // per question: {selected: [idx,...], locked: bool, confirmed: bool}
+  startedAt: null,  // Date.now() all'avvio del test, usato per calcolare la durata (cronometro silenzioso)
+};
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ===================== Storico risultati e ripasso mirato (localStorage) =====================
+// Stessa logica dell'app desktop AI200ExamSimulator (results.json / progress.json), riprodotta
+// qui con localStorage: dati persistenti sul dispositivo/browser corrente (non sincronizzati
+// altrove). Nessun uso di sessionStorage: tutto e' pensato per sopravvivere alla chiusura della
+// scheda/browser, che e' l'obiettivo di uno "storico" e di una coda di ripasso persistenti.
+
+const LS_RESULTS_KEY = 'ai200_history_results_v1';
+const LS_PROGRESS_KEY = 'ai200_review_progress_v1';
+const LS_REVIEW_COMPLETED_KEY = 'ai200_review_completed_count_v1'; // contatore lifetime: domande uscite dal ripasso
+const LS_COVERAGE_SEEN_KEY = 'ai200_coverage_seen_v1'; // domande gia' proposte nel ciclo di copertura corrente
+const REVIEW_WEIGHT_MULTIPLIER = 4.0;   // peso di estrazione delle domande in ripasso (vs 1.0 normale)
+const REVIEW_REQUIRED_CONSECUTIVE = 3;  // risposte corrette consecutive per uscire dal ripasso
+
+function safeGetLS(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+function safeSetLS(key, value) {
+  try { localStorage.setItem(key, value); return true; }
+  catch (e) { console.warn('Impossibile salvare in localStorage (spazio esaurito o non disponibile):', e); return false; }
+}
+
+function loadResults() {
+  try {
+    const raw = safeGetLS(LS_RESULTS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+function saveResults(arr) { safeSetLS(LS_RESULTS_KEY, JSON.stringify(arr)); }
+
+function loadProgress() {
+  try {
+    const raw = safeGetLS(LS_PROGRESS_KEY);
+    const obj = raw ? JSON.parse(raw) : {};
+    return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+  } catch (e) { return {}; }
+}
+function saveProgress(obj) { safeSetLS(LS_PROGRESS_KEY, JSON.stringify(obj)); }
+
+function loadReviewCompletedCount() {
+  const raw = safeGetLS(LS_REVIEW_COMPLETED_KEY);
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+function incrementReviewCompletedCount() {
+  const n = loadReviewCompletedCount() + 1;
+  safeSetLS(LS_REVIEW_COMPLETED_KEY, String(n));
+  return n;
+}
+
+// ===================== Copertura garantita del pool di domande =====================
+// Problema: con un'estrazione puramente casuale ad ogni test, alcune domande potrebbero
+// statisticamente non uscire mai per molte sessioni. Soluzione: si tiene traccia (in
+// localStorage, persistente tra sessioni) di quali domande sono gia' state proposte almeno
+// una volta in questo "ciclo di copertura"; ogni nuovo test pesca PRIMA dalle domande mai
+// viste nel ciclo corrente, e solo se non bastano per riempire il numero richiesto completa
+// pescando (con lo stesso peso di ripasso 4x) da quelle gia' viste. Quando tutte le domande
+// del pool sono state viste almeno una volta, il ciclo si chiude e riparte da zero: garantisce
+// quindi una copertura completa e periodica, non solo "probabile".
+function loadCoverageSeen() {
+  try {
+    const raw = safeGetLS(LS_COVERAGE_SEEN_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch (e) { return new Set(); }
+}
+function saveCoverageSeen(set) { safeSetLS(LS_COVERAGE_SEEN_KEY, JSON.stringify(Array.from(set))); }
+
+// Segna come "viste in questo ciclo" tutte le domande del pool appena proposto (Allenamento,
+// Simulazione o Solo ripasso: contano tutte, cosi' non serve rivedere le stesse domande in un
+// test normale solo per "spuntarle" dopo che sono gia' comparse in un ripasso). Se il ciclo
+// risulta completo (tutte le domande del dataset viste), riparte automaticamente da zero.
+function markQuestionsSeen(pool) {
+  const seen = loadCoverageSeen();
+  pool.forEach(q => seen.add(reviewKeyFor(q)));
+  if (seen.size >= QUESTIONS.length) {
+    saveCoverageSeen(new Set()); // ciclo completato: reset per il prossimo giro di copertura
+  } else {
+    saveCoverageSeen(seen);
+  }
+}
+
+// Come weightedSample, ma pesca prima dalle domande mai viste nel ciclo di copertura corrente
+// (fino ad esaurirle), e completa con le altre solo se servono ulteriori domande per arrivare a n.
+function weightedSampleWithCoverage(pool, n) {
+  const seen = loadCoverageSeen();
+  const unseen = pool.filter(q => !seen.has(reviewKeyFor(q)));
+  const alreadySeen = pool.filter(q => seen.has(reviewKeyFor(q)));
+
+  if (unseen.length >= n) {
+    return weightedSample(unseen, n);
+  }
+  const fromUnseen = shuffle(unseen);
+  const fromSeen = weightedSample(alreadySeen, n - unseen.length);
+  return shuffle(fromUnseen.concat(fromSeen));
+}
+
+// Aggiorna l'indicatore di copertura in Home (es. "512/300 domande viste in questo ciclo").
+function refreshCoverageUI() {
+  const el = document.getElementById('coverage-progress');
+  if (!el) return;
+  const seen = loadCoverageSeen();
+  el.textContent = seen.size + ' / ' + QUESTIONS.length + ' domande viste in questo ciclo';
+}
+
+// ===================== Statistiche per area/argomento =====================
+// Contatori lifetime corretti/sbagliati per categoria (campo "category" di ogni domanda in
+// exam-questions.js), accumulati su TUTTE le risposte date finora (anche nei test terminati
+// in anticipo con "Termina", stessa scelta già fatta per il progresso di ripasso): l'obiettivo
+// è un segnale di apprendimento accurato, non solo il punteggio dei test completati.
+const LS_CATEGORY_STATS_KEY = 'ai200_category_stats_v1';
+
+function loadCategoryStats() {
+  try {
+    const raw = safeGetLS(LS_CATEGORY_STATS_KEY);
+    const obj = raw ? JSON.parse(raw) : {};
+    return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+  } catch (e) { return {}; }
+}
+function saveCategoryStats(obj) { safeSetLS(LS_CATEGORY_STATS_KEY, JSON.stringify(obj)); }
+
+function updateCategoryStats() {
+  const stats = loadCategoryStats();
+  state.pool.forEach((q, i) => {
+    const st = state.answers[i];
+    if (!st.locked || !q.category) return;
+    const entry = stats[q.category] || { correct: 0, wrong: 0 };
+    if (isAnswerCorrect(q, st)) entry.correct++; else entry.wrong++;
+    stats[q.category] = entry;
+  });
+  saveCategoryStats(stats);
+}
+
+// Stato di ripasso corrente: chiave = reviewKeyFor(domanda), valore = {questionKey,
+// consecutiveCorrectCount, totalWrongCount, lastWrongAt, lastAnsweredAt}. Contiene SOLO le
+// domande attualmente in ripasso (stessa convenzione minimale di progress.json nell'app).
+let reviewProgress = loadProgress();
+
+// Identificativo stabile di una domanda, basato sul testo della domanda + testo delle risposte
+// (non solo il testo della domanda: due domande possono avere lo stesso enunciato ma risposte
+// diverse). Non e' SHA-256 come nell'app desktop (qui non serve crittografia, solo un ID stabile
+// e a bassa probabilita' di collisione su ~500 domande), ma lo stesso concetto di ReviewKey.
+function reviewKeyFor(q) {
+  if (q.__rk) return q.__rk;
+  const s = q.question + '|' + q.answers.map(a => a.text).join('|');
+  let h1 = 0xdeadbeef ^ s.length, h2 = 0x41c6ce57 ^ s.length;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  q.__rk = (h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0');
+  return q.__rk;
+}
+
+// Formattazione durata "m:ss" (es. "8:04") o "h:mm:ss" se supera un'ora (es. "1:32:07").
+function formatDuration(totalSecondsRaw) {
+  let totalSeconds = Math.round(totalSecondsRaw);
+  if (!isFinite(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad2 = n => String(n).padStart(2, '0');
+  return hours > 0 ? (hours + ':' + pad2(minutes) + ':' + pad2(seconds)) : (minutes + ':' + pad2(seconds));
+}
+
+// Formattazione media per risposta: secondi con una cifra decimale sotto il minuto (es. "8,4 sec"),
+// altrimenti minuti:secondi seguiti da "min" (es. "1:15 min"). "-" per un valore non calcolabile.
+function formatAverage(averageSeconds) {
+  if (!isFinite(averageSeconds) || averageSeconds < 0) return '-';
+  if (averageSeconds < 60) {
+    const rounded = Math.round(averageSeconds * 10) / 10;
+    const text = (Math.abs(rounded % 1) < 1e-9) ? String(Math.round(rounded)) : rounded.toFixed(1).replace('.', ',');
+    return text + ' sec';
+  }
+  return formatDuration(averageSeconds) + ' min';
+}
+
+// Data/ora in formato "dd/MM/yyyy HH:mm", stesso formato dello Storico nell'app desktop.
+function formatDateTime(iso) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '-';
+  const pad2 = n => String(n).padStart(2, '0');
+  return pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+}
+
+// Campionamento pesato senza reinserimento (stesso algoritmo "A-Res" dell'app desktop): ogni
+// domanda riceve una chiave U^(1/peso) con U~Uniform(0,1) e peso = 4x per le domande in ripasso,
+// 1x per le altre; si prendono le N chiavi piu' alte, poi il sottoinsieme scelto viene rimescolato
+// uniformemente cosi' l'ordine di presentazione non rivela quali erano "pesate".
+function weightedSample(pool, n) {
+  const withKeys = pool.map(q => {
+    const rk = reviewKeyFor(q);
+    const weight = reviewProgress[rk] ? REVIEW_WEIGHT_MULTIPLIER : 1.0;
+    const u = Math.random();
+    const key = Math.pow(u, 1 / weight);
+    return { q, key };
+  });
+  withKeys.sort((a, b) => b.key - a.key);
+  const chosen = withKeys.slice(0, n).map(x => x.q);
+  return shuffle(chosen);
+}
+
+function buildCountGrid() {
+  const grid = document.getElementById('count-grid');
+  grid.innerHTML = '';
+  SETTINGS.availableQuestionCounts.forEach((n, i) => {
+    const btn = document.createElement('div');
+    btn.className = 'count-btn' + (i === 0 ? ' selected' : '');
+    btn.textContent = n;
+    btn.dataset.count = n;
+    btn.onclick = () => selectCount(n, btn);
+    grid.appendChild(btn);
+  });
+}
+
+function selectMode(m) {
+  state.mode = m;
+  document.querySelectorAll('.mode-btn').forEach(b => {
+    b.classList.toggle('selected', b.dataset.mode === m);
+  });
+}
+
+function selectCount(n, el) {
+  state.count = n;
+  document.querySelectorAll('.count-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+function goHome() {
+  refreshHomeReviewUI();
+  showScreen('screen-home');
+}
+
+// Aggiorna lo stato del pulsante "Solo ripasso" (disabilitato se non ci sono domande in ripasso)
+// e il testo del pulsante "Domande in ripasso" (con conteggio, come nell'app desktop).
+function refreshHomeReviewUI() {
+  const count = Object.keys(reviewProgress).length;
+  const soloBtn = document.getElementById('btn-solo-ripasso');
+  if (soloBtn) soloBtn.disabled = count === 0;
+  const reviewBtn = document.getElementById('btn-show-reviewqueue');
+  if (reviewBtn) reviewBtn.textContent = count > 0 ? ('Domande in ripasso (' + count + ')') : 'Domande in ripasso';
+  refreshStreakUI();
+  refreshCoverageUI();
+}
+
+// ===================== Streak e traguardi (motivazionale) =====================
+// Calcola giorni consecutivi di allenamento dalle date gia' presenti nello storico risultati
+// (nessun nuovo storage necessario per lo streak in se': solo un contatore lifetime separato
+// per le domande "superate" in ripasso, che lo storico dei risultati non traccia).
+function computeStreak(results) {
+  if (results.length === 0) return { current: 0, best: 0 };
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const toDayStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
+
+  const days = Array.from(new Set(results.map(r => toDayStart(r.date)))).sort((a, b) => a - b);
+
+  let best = 1, run = 1;
+  for (let i = 1; i < days.length; i++) {
+    const diff = Math.round((days[i] - days[i - 1]) / dayMs);
+    run = (diff === 1) ? run + 1 : 1;
+    best = Math.max(best, run);
+  }
+
+  const today = toDayStart(Date.now());
+  const lastDay = days[days.length - 1];
+  const diffFromToday = Math.round((today - lastDay) / dayMs);
+
+  let current = 0;
+  if (diffFromToday <= 1) { // streak ancora "viva": ultimo test oggi o ieri
+    current = 1;
+    for (let i = days.length - 1; i > 0; i--) {
+      const diff = Math.round((days[i] - days[i - 1]) / dayMs);
+      if (diff === 1) current++; else break;
+    }
+  }
+
+  return { current, best };
+}
+
+function refreshStreakUI() {
+  const card = document.getElementById('streak-card');
+  if (!card) return;
+
+  const results = loadResults();
+  if (results.length === 0) { card.style.display = 'none'; return; }
+
+  const streak = computeStreak(results);
+  card.style.display = 'block';
+  document.getElementById('streak-current').textContent = streak.current;
+  document.getElementById('streak-best').textContent = streak.best;
+  document.getElementById('streak-tests').textContent = results.length;
+  document.getElementById('streak-reviewed').textContent = loadReviewCompletedCount();
+}
+
+function beginQuizWithPool(pool) {
+  state.pool = pool;
+  state.current = 0;
+  // "order" e' l'ordine di visualizzazione delle risposte per questa domanda in questo
+  // tentativo (permutazione degli indici originali di q.answers), rimescolato ad ogni nuova
+  // estrazione cosi' non ci si abitua alla posizione invece che al contenuto — importante
+  // soprattutto per il ripasso mirato, dove la stessa domanda puo' ripresentarsi piu' volte.
+  // Gli indici restano quelli ORIGINALI (dataset.idx, st.selected, correttezza, ecc. non
+  // cambiano): "order" influenza solo l'ORDINE con cui vengono disegnate le opzioni.
+  state.answers = state.pool.map(q => ({
+    selected: [],
+    locked: false,
+    confirmed: false,
+    order: shuffle(q.answers.map((_, i) => i)),
+  }));
+  state.startedAt = Date.now();
+  markQuestionsSeen(pool);
+  showScreen('screen-quiz');
+  renderQuestion();
+}
+
+function startQuiz() {
+  if (!QUESTIONS.length) {
+    const f = document.getElementById('app-footer');
+    if (f) f.textContent = 'Nessuna domanda caricata: aggiungi le domande in exam-questions.js';
+    return;
+  }
+  const n = Math.min(state.count, QUESTIONS.length);
+  beginQuizWithPool(weightedSampleWithCoverage(QUESTIONS, n));
+}
+
+// Avvia subito un test con TUTTE le domande attualmente in ripasso (ignora "Numero di domande"),
+// nella modalita' correntemente selezionata. Nessuna modifica al campionamento serve qui: con
+// questionCount == pool.length il campionamento pesato equivale a un mescolamento uniforme.
+function startReviewOnlyQuiz() {
+  const reviewPool = QUESTIONS.filter(q => reviewProgress[reviewKeyFor(q)]);
+  if (reviewPool.length === 0) {
+    alert('Non ci sono domande in ripasso al momento.');
+    return;
+  }
+  beginQuizWithPool(shuffle(reviewPool));
+}
+
+function isMulti(q) {
+  return q.answers.filter(a => a.correct).length > 1;
+}
+
+function renderQuestion() {
+  const q = state.pool[state.current];
+  const st = state.answers[state.current];
+  const total = state.pool.length;
+
+  document.getElementById('quiz-progress-label').textContent = 'Domanda ' + (state.current + 1) + ' di ' + total;
+  document.getElementById('quiz-mode-label').textContent = state.mode === 'allenamento' ? 'Allenamento' : 'Simulazione';
+  document.getElementById('progress-fill').style.width = Math.round(((state.current) / total) * 100) + '%';
+
+  document.getElementById('q-type-badge').textContent = isMulti(q) ? 'SCELTA MULTIPLA' : 'SCELTA SINGOLA';
+  const catBadge = document.getElementById('q-category-badge');
+  if (catBadge) catBadge.textContent = q.category || '';
+
+  const img = document.getElementById('q-image');
+  if (q.image && IMAGES[q.image]) {
+    img.src = IMAGES[q.image];
+    img.style.display = 'block';
+  } else {
+    img.style.display = 'none';
+  }
+
+  document.getElementById('q-text-en').textContent = fonteText(q, q.question);
+  const itEl = document.getElementById('q-text-it');
+  if (q.questionIt && q.questionIt.trim() && q.questionIt.trim() !== q.question.trim()) {
+    itEl.textContent = fonteText(q, q.questionIt);
+    itEl.style.display = 'block';
+  } else {
+    itEl.style.display = 'none';
+  }
+
+  const container = document.getElementById('answers-container');
+  container.innerHTML = '';
+  const multi = isMulti(q);
+
+  const displayOrder = st.order || q.answers.map((_, i) => i); // fallback per risultati storici senza "order"
+  displayOrder.forEach((idx) => {
+    const a = q.answers[idx];
+    const opt = document.createElement('div');
+    opt.className = 'answer-opt' + (multi ? ' multi' : '');
+    opt.dataset.idx = idx;
+
+    const marker = document.createElement('div');
+    marker.className = 'marker';
+    const optText = document.createElement('div');
+    optText.className = 'opt-text';
+    const enP = document.createElement('div');
+    enP.className = 'opt-en';
+    enP.textContent = a.text;
+    optText.appendChild(enP);
+    if (a.textIt && a.textIt.trim() && a.textIt.trim() !== a.text.trim()) {
+      const itP = document.createElement('div');
+      itP.className = 'opt-it';
+      itP.textContent = a.textIt;
+      optText.appendChild(itP);
+    }
+    opt.appendChild(marker);
+    opt.appendChild(optText);
+
+    if (st.selected.includes(idx)) opt.classList.add('picked');
+    if (st.locked) {
+      opt.classList.add('locked');
+      if (state.mode === 'allenamento') {
+        if (a.correct) opt.classList.add('correct-reveal');
+        else if (st.selected.includes(idx)) opt.classList.add('wrong-reveal');
+      }
+    } else {
+      opt.onclick = () => pickAnswer(idx, multi);
+    }
+
+    container.appendChild(opt);
+  });
+
+  document.getElementById('btn-confirm').style.display = (multi && !st.locked) ? 'block' : 'none';
+  const simSingleReady = (state.mode === 'simulazione' && !multi && !st.locked && st.selected.length > 0);
+  document.getElementById('btn-next').disabled = !st.locked && !simSingleReady;
+
+  renderExplain(q, st);
+}
+
+function pickAnswer(idx, multi) {
+  const st = state.answers[state.current];
+  if (st.locked) return;
+
+  if (multi) {
+    const pos = st.selected.indexOf(idx);
+    if (pos >= 0) st.selected.splice(pos, 1);
+    else st.selected.push(idx);
+  } else if (state.mode === 'simulazione') {
+    // In modalità simulazione, per le domande a risposta singola la scelta
+    // resta modificabile: l'utente può cambiare risposta cliccandone un'altra
+    // e la blocca solo avanzando con il pulsante "Avanti".
+    st.selected = [idx];
+  } else {
+    st.selected = [idx];
+    st.locked = true;
+  }
+  renderQuestion();
+}
+
+function confirmMulti() {
+  const st = state.answers[state.current];
+  if (st.selected.length === 0) return;
+  st.locked = true;
+  st.confirmed = true;
+  renderQuestion();
+}
+
+function renderExplain(q, st) {
+  const box = document.getElementById('explain-container');
+  box.innerHTML = '';
+  if (!st.locked) return;
+  if (state.mode !== 'allenamento') return;
+
+  const div = document.createElement('div');
+  div.className = 'explain-box';
+  const lbl = document.createElement('span');
+  lbl.className = 'lbl';
+  lbl.textContent = '💡 Spiegazione';
+  div.appendChild(lbl);
+
+  const parts = splitDescription(q.description);
+  const p = document.createElement('div');
+  p.textContent = parts.text;
+  div.appendChild(p);
+  if (parts.url) {
+    const a = document.createElement('a');
+    a.href = parts.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = 'Fonte: ' + parts.url;
+    const wrap = document.createElement('div');
+    wrap.style.marginTop = '8px';
+    wrap.appendChild(a);
+    div.appendChild(wrap);
+  }
+  box.appendChild(div);
+}
+
+function splitDescription(desc) {
+  if (!desc) return { text: '', url: null };
+  const m = desc.match(/^(.*?)(?:\s*Fonte:\s*(\S+))?$/s);
+  if (m && m[2]) {
+    return { text: m[1].trim(), url: m[2].trim() };
+  }
+  return { text: desc, url: null };
+}
+
+function lockPendingSelection(i) {
+  // In modalità simulazione la risposta a scelta singola resta modificabile
+  // finché non si avanza/termina: qui la si blocca definitivamente.
+  const q = state.pool[i];
+  const st = state.answers[i];
+  if (state.mode === 'simulazione' && !isMulti(q) && !st.locked && st.selected.length > 0) {
+    st.locked = true;
+  }
+}
+
+function nextQuestion() {
+  lockPendingSelection(state.current);
+  if (state.current < state.pool.length - 1) {
+    state.current++;
+    renderQuestion();
+  } else {
+    finishQuiz();
+  }
+}
+
+function endQuizEarly() {
+  lockPendingSelection(state.current);
+  const unanswered = state.answers.filter(a => !a.locked).length;
+  if (unanswered > 0) {
+    const ok = confirm('Ci sono ancora ' + unanswered + ' domande senza risposta. Vuoi comunque terminare il test? Il risultato non verrà salvato nello storico.');
+    if (!ok) return;
+  }
+  finishQuiz();
+}
+
+function isAnswerCorrect(q, st) {
+  if (!st.locked) return false;
+  const correctIdx = q.answers.map((a, i) => a.correct ? i : -1).filter(i => i >= 0);
+  if (correctIdx.length !== st.selected.length) return false;
+  return correctIdx.every(i => st.selected.includes(i));
+}
+
+// Aggiorna il progresso di ripasso per le sole domande a cui e' stata data una risposta (le
+// domande mai raggiunte, possibili solo in un test terminato in anticipo, vengono saltate: ne'
+// premiate ne' penalizzate). Stessa logica di MainViewModel.UpdateReviewProgress nell'app desktop.
+function updateReviewProgress() {
+  const now = new Date().toISOString();
+  state.pool.forEach((q, i) => {
+    const st = state.answers[i];
+    if (!st.locked) return;
+
+    const key = reviewKeyFor(q);
+    const correct = isAnswerCorrect(q, st);
+
+    if (correct) {
+      const progress = reviewProgress[key];
+      if (!progress) return; // mai in ripasso: una risposta corretta non lo fa iniziare
+      progress.consecutiveCorrectCount++;
+      progress.lastAnsweredAt = now;
+      if (progress.consecutiveCorrectCount >= REVIEW_REQUIRED_CONSECUTIVE) {
+        delete reviewProgress[key]; // ripasso completato, torna al peso normale
+        incrementReviewCompletedCount(); // contatore lifetime per la card "Il tuo percorso"
+      }
+    } else {
+      let progress = reviewProgress[key];
+      if (!progress) {
+        progress = { questionKey: key, consecutiveCorrectCount: 0, totalWrongCount: 0, lastWrongAt: null, lastAnsweredAt: null };
+        reviewProgress[key] = progress;
+      }
+      progress.consecutiveCorrectCount = 0; // un errore azzera SEMPRE il conteggio
+      progress.totalWrongCount++;
+      progress.lastWrongAt = now;
+      progress.lastAnsweredAt = now;
+    }
+  });
+}
+
+function finishQuiz() {
+  let correct = 0, wrong = 0, unanswered = 0;
+  state.pool.forEach((q, i) => {
+    const st = state.answers[i];
+    if (!st.locked) { unanswered++; return; }
+    if (isAnswerCorrect(q, st)) correct++; else wrong++;
+  });
+
+  const total = state.pool.length;
+  const maxScore = SETTINGS.maxScore;
+  const passingScore = SETTINGS.passingScore;
+  const score = Math.round((correct / total) * maxScore);
+  const passed = score >= passingScore;
+  const isComplete = unanswered === 0;
+  const durationSeconds = Math.max(0, Math.round(((Date.now() - (state.startedAt || Date.now())) / 1000)));
+
+  document.getElementById('score-val').textContent = score;
+  document.getElementById('score-max').textContent = '/ ' + maxScore;
+  document.getElementById('score-circle').classList.toggle('fail', !passed);
+  document.getElementById('result-verdict').textContent = passed ? 'Superato' : 'Non superato';
+  document.getElementById('result-verdict').className = 'result-verdict ' + (passed ? 'pass' : 'fail');
+  document.getElementById('result-sub').textContent = 'Soglia di superamento: ' + passingScore + ' / ' + maxScore;
+  document.getElementById('stat-correct').textContent = correct + ' / ' + total;
+  document.getElementById('stat-wrong').textContent = wrong;
+  document.getElementById('stat-unanswered').textContent = unanswered;
+  document.getElementById('stat-mode').textContent = state.mode === 'allenamento' ? 'Allenamento' : 'Simulazione';
+  document.getElementById('stat-duration').textContent = formatDuration(durationSeconds);
+  document.getElementById('stat-avg').textContent = formatAverage(total === 0 ? NaN : durationSeconds / total);
+
+  const warning = document.getElementById('result-warning');
+  if (warning) warning.style.display = isComplete ? 'none' : 'block';
+
+  // Test completo -> salvato nello storico. Test troncato con "Termina" -> NON salvato (stessa
+  // regola dell'app desktop), ma il progresso di ripasso si aggiorna comunque qui sotto.
+  if (isComplete) {
+    const results = loadResults();
+    results.push({
+      date: new Date().toISOString(),
+      questionCount: total,
+      correctAnswers: correct,
+      wrongAnswers: wrong,
+      score: score,
+      passed: passed,
+      durationSeconds: durationSeconds
+    });
+    saveResults(results);
+  }
+
+  updateReviewProgress();
+  saveProgress(reviewProgress);
+  updateCategoryStats();
+
+  showScreen('screen-result');
+}
+
+function showReview() {
+  const list = document.getElementById('review-list');
+  list.innerHTML = '';
+  state.pool.forEach((q, i) => {
+    const st = state.answers[i];
+    const ok = st.locked && isAnswerCorrect(q, st);
+
+    const item = document.createElement('div');
+    item.className = 'review-item';
+
+    const num = document.createElement('div');
+    num.className = 'review-num';
+    num.textContent = 'Domanda ' + (i + 1);
+    const verdict = document.createElement('span');
+    verdict.className = 'review-verdict ' + (st.locked ? (ok ? 'ok' : 'bad') : 'bad');
+    verdict.textContent = !st.locked ? 'SENZA RISPOSTA' : (ok ? 'CORRETTA' : 'SBAGLIATA');
+    num.appendChild(verdict);
+    if (q.category) {
+      const catBadge = document.createElement('span');
+      catBadge.className = 'badge badge-category';
+      catBadge.style.marginBottom = '0';
+      catBadge.textContent = q.category;
+      num.appendChild(catBadge);
+    }
+    item.appendChild(num);
+
+    if (q.image && IMAGES[q.image]) {
+      const img = document.createElement('img');
+      img.className = 'q-image';
+      img.src = IMAGES[q.image];
+      item.appendChild(img);
+    }
+
+    const qEn = document.createElement('p');
+    qEn.className = 'q-text-en';
+    qEn.textContent = fonteText(q, q.question);
+    item.appendChild(qEn);
+    if (q.questionIt && q.questionIt.trim() !== q.question.trim()) {
+      const qIt = document.createElement('p');
+      qIt.className = 'q-text-it';
+      qIt.textContent = fonteText(q, q.questionIt);
+      item.appendChild(qIt);
+    }
+
+    const ansWrap = document.createElement('div');
+    ansWrap.className = 'answers';
+    // Stesso ordine visto durante il quiz (non un nuovo rimescolamento), per coerenza con
+    // quanto l'utente ha effettivamente visto.
+    const reviewOrder = st.order || q.answers.map((_, oi) => oi);
+    reviewOrder.forEach((idx) => {
+      const a = q.answers[idx];
+      const opt = document.createElement('div');
+      opt.className = 'answer-opt locked';
+      if (a.correct) opt.classList.add('correct-reveal');
+      else if (st.selected.includes(idx)) opt.classList.add('wrong-reveal');
+      const marker = document.createElement('div');
+      marker.className = 'marker';
+      marker.textContent = st.selected.includes(idx) ? '●' : '';
+      const optText = document.createElement('div');
+      optText.className = 'opt-text';
+      const enP = document.createElement('div');
+      enP.className = 'opt-en';
+      enP.textContent = a.text;
+      optText.appendChild(enP);
+      if (a.textIt && a.textIt.trim() !== a.text.trim()) {
+        const itP = document.createElement('div');
+        itP.className = 'opt-it';
+        itP.textContent = a.textIt;
+        optText.appendChild(itP);
+      }
+      opt.appendChild(marker);
+      opt.appendChild(optText);
+      ansWrap.appendChild(opt);
+    });
+    item.appendChild(ansWrap);
+
+    const parts = splitDescription(q.description);
+    if (parts.text) {
+      const div = document.createElement('div');
+      div.className = 'explain-box';
+      const lbl = document.createElement('span');
+      lbl.className = 'lbl';
+      lbl.textContent = '💡 Spiegazione';
+      div.appendChild(lbl);
+      const p = document.createElement('div');
+      p.textContent = parts.text;
+      div.appendChild(p);
+      if (parts.url) {
+        const a = document.createElement('a');
+        a.href = parts.url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = 'Fonte: ' + parts.url;
+        const wrap = document.createElement('div');
+        wrap.style.marginTop = '8px';
+        wrap.appendChild(a);
+        div.appendChild(wrap);
+      }
+      item.appendChild(div);
+    }
+
+    list.appendChild(item);
+  });
+  showScreen('screen-review');
+}
+
+// ===================== Storico risultati =====================
+function showHistory() {
+  const results = loadResults().slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+  const hasResults = results.length > 0;
+
+  document.getElementById('history-empty').style.display = hasResults ? 'none' : 'block';
+  document.getElementById('history-stats').style.display = hasResults ? 'grid' : 'none';
+  document.getElementById('history-list').style.display = hasResults ? 'block' : 'none';
+
+  if (hasResults) {
+    const testCount = results.length;
+    const bestScore = Math.max(...results.map(r => r.score));
+    const avgScore = Math.round(results.reduce((s, r) => s + r.score, 0) / testCount);
+    const passRate = results.filter(r => r.passed).length * 100 / testCount;
+
+    document.getElementById('hist-count').textContent = testCount;
+    document.getElementById('hist-best').textContent = bestScore;
+    document.getElementById('hist-avg').textContent = avgScore;
+    document.getElementById('hist-passrate').textContent = (Math.round(passRate * 10) / 10) + '%';
+
+    const wrap = document.getElementById('history-list');
+    wrap.innerHTML = '';
+
+    const table = document.createElement('table');
+    table.className = 'history-table';
+
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    ['Data', 'Domande', 'Corrette', 'Errate', 'Punteggio', 'Durata', 'Media/risposta', 'Esito'].forEach(h => {
+      const th = document.createElement('th');
+      th.textContent = h;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    results.forEach(r => {
+      const hasDuration = typeof r.durationSeconds === 'number';
+      const durationText = hasDuration ? formatDuration(r.durationSeconds) : 'N/D';
+      const avgText = hasDuration ? formatAverage(r.questionCount === 0 ? NaN : r.durationSeconds / r.questionCount) : 'N/D';
+
+      const tr = document.createElement('tr');
+
+      const cells = [
+        [formatDateTime(r.date), false],
+        [r.questionCount, true],
+        [r.correctAnswers, true],
+        [r.wrongAnswers, true],
+        [r.score, true],
+        [durationText, false],
+        [avgText, false],
+      ];
+      cells.forEach(([val, isNum]) => {
+        const td = document.createElement('td');
+        if (isNum) td.className = 'num';
+        td.textContent = val;
+        tr.appendChild(td);
+      });
+
+      const esitoTd = document.createElement('td');
+      const esito = document.createElement('span');
+      esito.className = 'hr-esito ' + (r.passed ? 'ok' : 'bad');
+      esito.textContent = r.passed ? 'SUPERATO' : 'NON SUPERATO';
+      esitoTd.appendChild(esito);
+      tr.appendChild(esitoTd);
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+  }
+
+  renderCategoryStats();
+
+  showScreen('screen-history');
+}
+
+// Mostra, dalla più debole alla più forte, la percentuale di risposte corrette per area —
+// calcolata su TUTTE le risposte date finora (vedi updateCategoryStats()), non solo l'ultimo
+// test: è pensata per rispondere a "in quali argomenti sono più debole", non "come è andato
+// l'ultimo test" (a quello risponde già la tabella dello storico sopra).
+function renderCategoryStats() {
+  const card = document.getElementById('category-stats-card');
+  const list = document.getElementById('category-stats-list');
+  if (!card || !list) return;
+
+  const stats = loadCategoryStats();
+  const rows = Object.keys(stats)
+    .map(cat => {
+      const { correct, wrong } = stats[cat];
+      const total = correct + wrong;
+      return { cat, correct, wrong, total, pct: total > 0 ? (correct / total) * 100 : 0 };
+    })
+    .filter(r => r.total > 0)
+    .sort((a, b) => a.pct - b.pct); // più debole prima
+
+  if (rows.length === 0) { card.style.display = 'none'; return; }
+
+  card.style.display = 'block';
+  list.innerHTML = '';
+
+  rows.forEach(r => {
+    const row = document.createElement('div');
+    const cls = r.pct < 60 ? 'weak' : (r.pct >= 85 ? 'strong' : '');
+    row.className = 'cat-stat-row' + (cls ? ' ' + cls : '');
+
+    const bar = document.createElement('div');
+    bar.className = 'cat-stat-bar';
+    bar.style.width = Math.max(0, Math.min(100, r.pct)) + '%';
+    row.appendChild(bar);
+
+    const name = document.createElement('span');
+    name.className = 'cat-stat-name';
+    name.textContent = r.cat;
+    row.appendChild(name);
+
+    const val = document.createElement('span');
+    val.className = 'cat-stat-val';
+    val.innerHTML = Math.round(r.pct) + '% <small>(' + r.correct + '/' + r.total + ')</small>';
+    row.appendChild(val);
+
+    list.appendChild(row);
+  });
+}
+
+// ===================== Domande in ripasso =====================
+function showReviewQueue() {
+  const map = {};
+  QUESTIONS.forEach(q => { map[reviewKeyFor(q)] = q; });
+
+  const rows = Object.keys(reviewProgress)
+    .filter(key => map[key])
+    .map(key => ({ q: map[key], p: reviewProgress[key] }))
+    .sort((a, b) => {
+      if (a.p.consecutiveCorrectCount !== b.p.consecutiveCorrectCount) {
+        return a.p.consecutiveCorrectCount - b.p.consecutiveCorrectCount;
+      }
+      return new Date(b.p.lastWrongAt || 0) - new Date(a.p.lastWrongAt || 0);
+    });
+
+  document.getElementById('reviewqueue-empty').style.display = rows.length === 0 ? 'block' : 'none';
+  document.getElementById('reviewqueue-list').style.display = rows.length === 0 ? 'none' : 'block';
+  document.getElementById('reviewqueue-count').textContent = rows.length;
+
+  const list = document.getElementById('reviewqueue-list');
+  list.innerHTML = '';
+  rows.forEach(({ q, p }) => {
+    const item = document.createElement('div');
+    item.className = 'review-item';
+
+    if (q.category) {
+      const catBadge = document.createElement('span');
+      catBadge.className = 'badge badge-category';
+      catBadge.style.marginLeft = '0';
+      catBadge.textContent = q.category;
+      item.appendChild(catBadge);
+    }
+
+    const qEn = document.createElement('p');
+    qEn.className = 'q-text-en';
+    qEn.textContent = fonteText(q, q.question);
+    item.appendChild(qEn);
+    if (q.questionIt && q.questionIt.trim() !== q.question.trim()) {
+      const qIt = document.createElement('p');
+      qIt.className = 'q-text-it';
+      qIt.textContent = fonteText(q, q.questionIt);
+      item.appendChild(qIt);
+    }
+
+    const progressLine = document.createElement('div');
+    progressLine.className = 'rq-progress';
+    progressLine.textContent = p.consecutiveCorrectCount + '/' + REVIEW_REQUIRED_CONSECUTIVE + ' risposte corrette consecutive';
+    item.appendChild(progressLine);
+
+    const meta = document.createElement('div');
+    meta.className = 'rq-meta';
+    meta.textContent = 'Sbagliata ' + p.totalWrongCount + (p.totalWrongCount === 1 ? ' volta' : ' volte') + ' in totale · Ultimo errore: ' + formatDateTime(p.lastWrongAt);
+    item.appendChild(meta);
+
+    list.appendChild(item);
+  });
+
+  showScreen('screen-reviewqueue');
+}
+
+applyBranding();
+renderStudyTip();
+renderUsefulLinks();
+const _rn = document.getElementById('review-required-n'); if (_rn) _rn.textContent = REVIEW_REQUIRED_CONSECUTIVE;
+applyPrimaryLang(loadPrimaryLang());
+applyFontScale(loadFontScale());
+updateOfflineBanner();
+buildCountGrid();
+refreshHomeReviewUI();
+</script>
+</body>
+</html>
